@@ -2,6 +2,12 @@
 
 专为 [SPlayer-Next](https://github.com/realless/SPlayer-Next) 打造的 OBS 浏览器源音乐/歌词挂件。
 
+## 预览
+
+![OBS 中的 SPlayer-Next 歌词挂件](docs/preview.png)
+
+*OBS 30.2.3 中实际运行效果，浏览器源名称为 `splayer-overlay`。*
+
 项目已从 Gist 迁移到本仓库：
 
 - 旧 Gist：<https://gist.github.com/VincentZyu233/d2d70cfdf3403f352c407c458e021ed5>
@@ -24,7 +30,9 @@
 ├── index.html          # OBS 加载的挂件页面
 ├── configure.py        # 修改 host、port 和字体
 ├── download_font.py    # 下载最新版 LXGW WenKai 字体
+├── docs/preview.png    # README 预览图
 ├── README.md
+├── .gitattributes      # 让 Markdown 计入 GitHub 语言统计
 ├── .gitignore
 └── fonts/              # 由下载脚本创建，字体不提交到 Git
 ```

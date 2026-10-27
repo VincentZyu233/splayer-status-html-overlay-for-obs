@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+fonts/*.ttf
+fonts/*.otf
+fonts/*.woff
+fonts/*.woff2
+index.html.bak
+.DS_Store

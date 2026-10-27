@@ -1,0 +1,684 @@
+<!--
+================================================================================
+* SPlayer-Next OBS 直播透明歌词挂件 (OBS Browser Source Widget)
+*
+* 【用户自定义配置清单】
+*
+* 推荐直接运行 "python configure.py" 修改 host、port 和字体路径；
+* 也可以手动搜索下方【配置项 1】和【配置项 2】进行修改。
+*
+* 1. 字体配置（CSS 区域）：
+*    - 默认加载仓库内 fonts/LXGWWenKai-Regular.ttf；
+*    - 若系统已安装霞鹜文楷（LXGW WenKai），也可以运行 configure.py 切换为系统字体。
+*
+* 2. 端口与网络配置（JavaScript 区域）：
+*    - 搜索【配置项 2：网络与连接端口】（CONFIG.apiPort），
+*      需与 SPlayer 客户端【设置】->【网络与服务】->【外部 API】里的端口一致（默认 14558）。
+*
+* 3. SPlayer 客户端前置设置：
+*    - 必须在 SPlayer-Next 客户端内打开：【允许外部控制】与【启用 WebSocket】开关！
+================================================================================
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SPlayer-Next OBS Widget</title>
+  <style>
+    /*
+     * ==========================================
+     * 【配置项 1：字体设置】
+     * 默认加载仓库内 fonts/LXGWWenKai-Regular.ttf；
+     * 运行 "python configure.py" 可切换为系统字体或任意本地字体。
+     * ==========================================
+     */
+    /* FONT_CONFIG_START */
+    @font-face {
+      font-family: "LXGW WenKai Custom";
+      src: url("fonts/LXGWWenKai-Regular.ttf") format("truetype");
+      font-weight: normal;
+      font-display: swap;
+    }
+    /* FONT_CONFIG_END */
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      box-sizing: border-box;
+    }
+
+    body {
+      /* 字体调用链：优先使用自定义/系统级霞鹜文楷，未安装时回退至系统高可读性无衬线体 */
+      font-family: "LXGW WenKai Custom", "LXGW WenKai", "LXGW WenKai Mono", "LXGW WenKai Screen", "霞鹜文楷", "霞鹜文楷 等宽", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 16px;
+      color: #ffffff;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+
+    /* 播放器透明浮空卡片 */
+    .player-widget {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: rgba(18, 18, 26, 0.65);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      padding: 14px 20px 14px 14px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      width: auto;
+      max-width: 100%;
+      min-width: 480px;
+      transition: opacity 0.3s ease;
+      position: relative;
+      box-sizing: border-box;
+    }
+
+    /* 左侧列：封面 + 左下角时间 */
+    .left-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* 封面区 */
+    .cover-container {
+      position: relative;
+      width: 76px;
+      height: 76px;
+      flex-shrink: 0;
+    }
+
+    .cover-img {
+      width: 100%;
+      height: 100%;
+      border-radius: 14px;
+      object-fit: cover;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: transform 0.4s ease, opacity 0.3s ease;
+      background: #252533;
+    }
+
+    .cover-img.paused {
+      filter: grayscale(40%) opacity(0.85);
+      transform: scale(0.96);
+    }
+
+    /* 默认音符封面占位 */
+    .default-cover {
+      width: 100%;
+      height: 100%;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #3a3a4c, #20202d);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .default-cover svg {
+      width: 36px;
+      height: 36px;
+      fill: rgba(255, 255, 255, 0.6);
+    }
+
+    /* 左下角时间标签 */
+    .time-display {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.7);
+      letter-spacing: 0.5px;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      padding: 1px 6px;
+      background: rgba(0, 0, 0, 0.28);
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      line-height: 1.3;
+    }
+
+    /* 右侧信息区 */
+    .info-container {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 5px;
+      flex-grow: 1;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    /* 歌曲与歌手 */
+    .header-line {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .track-title {
+      font-size: 19px;
+      font-weight: 700;
+      color: #ffffff;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-artist {
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.7);
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 0;
+    }
+
+    /* 细线进度条（SPlayer 原生主色风格） */
+    .progress-bar-wrap {
+      width: 100%;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+      overflow: hidden;
+      margin: 2px 0 4px 0;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #f43f5e, #fe7971);
+      box-shadow: 0 0 8px rgba(254, 121, 113, 0.45);
+      border-radius: 3px;
+      transition: width 0.2s linear;
+    }
+
+    /* 实时多层歌词区（支持最多三种文字：原文、翻译、罗马音） */
+    .lyric-box {
+      display: flex;
+      flex-direction: column;
+      min-height: 28px;
+      justify-content: center;
+      gap: 3px;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    /* 第 1 行：原文主歌词（日文/英文/中文） */
+    .lyric-main {
+      font-size: 17px;
+      font-weight: 700;
+      color: #ffffff;
+      text-shadow: 0 2px 5px rgba(0, 0, 0, 0.95), 0 0 2px #000000;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.2px;
+      line-height: 1.3;
+    }
+
+    /* 第 2 行：中文翻译歌词 */
+    .lyric-trans {
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.88);
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
+    }
+
+    /* 第 3 行：罗马音歌词 */
+    .lyric-roman {
+      font-size: 11px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.62);
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.4px;
+      line-height: 1.2;
+    }
+
+    .lyric-changing {
+      opacity: 0.2;
+      transform: translateY(-3px);
+    }
+
+    /* 状态指示小图标 */
+    .status-dot {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+      opacity: 0.6;
+      transition: opacity 0.3s, background-color 0.3s;
+    }
+
+    .status-dot.disconnected {
+      background: #ef4444;
+      opacity: 0.9;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.3); opacity: 0.4; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="player-widget" id="widget">
+    <div class="status-dot disconnected" id="statusDot" title="连接状态"></div>
+
+    <!-- 左侧：封面与时间戳 -->
+    <div class="left-container">
+      <div class="cover-container">
+        <img id="coverImg" class="cover-img" src="" alt="封面" style="display: none;" />
+        <div id="defaultCover" class="default-cover">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+          </svg>
+        </div>
+      </div>
+      <!-- 左下角时间 -->
+      <div class="time-display" id="timeDisplay">00:00 / 00:00</div>
+    </div>
+
+    <!-- 右侧：歌曲信息与三行歌词 -->
+    <div class="info-container">
+      <div class="header-line">
+        <span class="track-title" id="trackTitle">等待 SPlayer-Next 连接...</span>
+        <span class="track-artist" id="trackArtist"></span>
+      </div>
+
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="progressFill"></div>
+      </div>
+
+      <!-- 歌词区（支持最多三种文字自适应展开） -->
+      <div class="lyric-box" id="lyricBox">
+        <div class="lyric-main" id="lyricMain">♪</div>
+        <div class="lyric-trans" id="lyricTrans" style="display: none;"></div>
+        <div class="lyric-roman" id="lyricRoman" style="display: none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /*
+     * ==========================================
+     * 【配置项 2：网络与连接端口】
+     * 请确认这里的端口号与 SPlayer-Next【设置】->【网络与服务】->【外部 API】里的监听端口一致。
+     * ==========================================
+     */
+    const CONFIG = {
+      // SPlayer-Next 外部 API 端口（默认 14558）
+      apiPort: 14558,
+      // 客户端所在主机地址（通常本机为 127.0.0.1，如跨机器局域网推流请填写运行 SPlayer 机器的局域网 IP）
+      apiHost: "127.0.0.1",
+      pollIntervalMs: 1000,
+      reconnectIntervalMs: 2500,
+    };
+
+    const state = {
+      ws: null,
+      track: null,
+      lyrics: [],
+      positionMs: 0,
+      durationMs: 0,
+      isPlaying: false,
+      lastTickAt: Date.now(),
+      currentLyricIndex: -1,
+    };
+
+    // DOM 元素引用
+    const dom = {
+      coverImg: document.getElementById("coverImg"),
+      defaultCover: document.getElementById("defaultCover"),
+      timeDisplay: document.getElementById("timeDisplay"),
+      trackTitle: document.getElementById("trackTitle"),
+      trackArtist: document.getElementById("trackArtist"),
+      progressFill: document.getElementById("progressFill"),
+      lyricBox: document.getElementById("lyricBox"),
+      lyricMain: document.getElementById("lyricMain"),
+      lyricTrans: document.getElementById("lyricTrans"),
+      lyricRoman: document.getElementById("lyricRoman"),
+      statusDot: document.getElementById("statusDot"),
+    };
+
+    /** 格式化毫秒为 mm:ss */
+    function formatTime(ms) {
+      if (!ms || ms < 0 || isNaN(ms)) return "00:00";
+      const totalSec = Math.floor(ms / 1000);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      return `${min.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
+    }
+
+    let lastTimeStr = "";
+    function updateTimeDisplay() {
+      const timeStr = `${formatTime(state.positionMs)} / ${formatTime(state.durationMs)}`;
+      if (timeStr !== lastTimeStr) {
+        lastTimeStr = timeStr;
+        dom.timeDisplay.innerText = timeStr;
+      }
+    }
+
+    /** 初始化 WebSocket 与网络连接 */
+    function initConnection() {
+      const wsUrl = `ws://${CONFIG.apiHost}:${CONFIG.apiPort}/ws`;
+
+      try {
+        state.ws = new WebSocket(wsUrl);
+
+        state.ws.onopen = () => {
+          dom.statusDot.classList.remove("disconnected");
+          dom.statusDot.title = "已连接到 SPlayer-Next";
+          if (!state.track) {
+            dom.trackTitle.innerText = "已连接 SPlayer，请播放或切歌...";
+          }
+          fetchInitialState();
+        };
+
+        state.ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            handleWsMessage(msg);
+          } catch (e) {
+            console.warn("解析 WS 消息失败:", e);
+          }
+        };
+
+        state.ws.onclose = () => {
+          dom.statusDot.classList.add("disconnected");
+          dom.statusDot.title = "与 SPlayer-Next 断开连接，尝试重连中...";
+          setTimeout(initConnection, CONFIG.reconnectIntervalMs);
+        };
+
+        state.ws.onerror = () => {
+          state.ws?.close();
+        };
+      } catch (err) {
+        setTimeout(initConnection, CONFIG.reconnectIntervalMs);
+      }
+    }
+
+    /** 处理 SPlayer-Next 推送的 WebSocket 事件 */
+    function handleWsMessage(msg) {
+      if (msg.kind === "event") {
+        if (msg.type === "track") {
+          const track = msg.data?.track || msg.data;
+          updateTrack(track);
+          fetchLyrics();
+        } else if (msg.type === "lyric") {
+          updateLyrics(msg.data?.lyric || []);
+        } else if (msg.type === "status") {
+          updateStatus(msg.data);
+        }
+      }
+    }
+
+    /** 主动拉取当前播放状态（初始兜底） */
+    async function fetchInitialState() {
+      try {
+        const res = await fetch(`http://${CONFIG.apiHost}:${CONFIG.apiPort}/api/now-playing`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.track) updateTrack(data.track);
+          if (data.position !== undefined) state.positionMs = data.position;
+          if (data.state !== undefined) state.isPlaying = data.state === "playing";
+        }
+        fetchLyrics();
+        fetchStatus();
+      } catch (e) {}
+    }
+
+    /** 拉取当前歌词 */
+    async function fetchLyrics() {
+      try {
+        const res = await fetch(`http://${CONFIG.apiHost}:${CONFIG.apiPort}/api/lyrics`);
+        if (res.ok) {
+          const data = await res.json();
+          updateLyrics(data.lyric || []);
+        }
+      } catch (e) {}
+    }
+
+    /** 周期性同步播放进度 */
+    async function fetchStatus() {
+      try {
+        const res = await fetch(`http://${CONFIG.apiHost}:${CONFIG.apiPort}/api/status`);
+        if (res.ok) {
+          const data = await res.json();
+          state.positionMs = data.position || 0;
+          state.durationMs = data.duration || 0;
+          state.isPlaying = data.state === "playing";
+          state.lastTickAt = Date.now();
+          updateProgressBar();
+          updateTimeDisplay();
+        }
+      } catch (e) {}
+    }
+
+    /** 更新曲目信息 */
+    function updateTrack(rawTrack) {
+      const track = rawTrack?.track || rawTrack;
+      if (!track || typeof track !== "object") return;
+      state.track = track;
+      state.durationMs = track.duration || 0;
+
+      dom.trackTitle.innerText = track.title || "未知曲目";
+      const artists = (track.artists || []).map(a => (typeof a === "string" ? a : a.name)).join(" / ");
+      dom.trackArtist.innerText = artists ? `· ${artists}` : "";
+
+      const coverUrl = track.cover || track.coverOriginal;
+      if (coverUrl) {
+        dom.coverImg.src = coverUrl;
+        dom.coverImg.style.display = "block";
+        dom.defaultCover.style.display = "none";
+        dom.coverImg.onerror = () => {
+          dom.coverImg.style.display = "none";
+          dom.defaultCover.style.display = "flex";
+        };
+      } else {
+        dom.coverImg.style.display = "none";
+        dom.defaultCover.style.display = "flex";
+      }
+
+      state.currentLyricIndex = -1;
+      dom.lyricMain.innerText = "♪";
+      dom.lyricTrans.style.display = "none";
+      dom.lyricRoman.style.display = "none";
+      updateTimeDisplay();
+    }
+
+    /** 更新歌词库（支持原文、翻译、罗马音三层数据解包） */
+    function updateLyrics(rawLyrics) {
+      state.lyrics = rawLyrics.map(line => {
+        let text = "";
+        if (line.words && Array.isArray(line.words)) {
+          text = line.words.map(w => (typeof w === "string" ? w : w.word || "")).join("");
+        } else if (typeof line.text === "string") {
+          text = line.text;
+        }
+
+        // 提取罗马音（优先取 line.romanLyric，若无则从 words 的 romanWord 提取）
+        let roman = line.romanLyric || "";
+        if (!roman && Array.isArray(line.words)) {
+          const joinedRoman = line.words
+            .map(w => (typeof w === "object" ? w.romanWord || "" : ""))
+            .join(" ")
+            .trim();
+          if (joinedRoman) roman = joinedRoman;
+        }
+
+        // 提取翻译
+        let trans = line.translatedLyric || "";
+
+        return {
+          startTime: line.startTime || 0,
+          endTime: line.endTime || (line.startTime ? line.startTime + 4000 : 0),
+          mainText: text.trim(),
+          transText: trans.trim(),
+          romanText: roman.trim(),
+        };
+      }).filter(l => l.mainText.length > 0 || l.transText.length > 0);
+    }
+
+    /** 更新播放/暂停状态 */
+    function updateStatus(statusData) {
+      if (!statusData) return;
+      if (statusData.state) {
+        state.isPlaying = statusData.state === "playing";
+        if (state.isPlaying) {
+          dom.coverImg.classList.remove("paused");
+        } else {
+          dom.coverImg.classList.add("paused");
+        }
+      }
+      if (statusData.position !== undefined) {
+        state.positionMs = statusData.position;
+        state.lastTickAt = Date.now();
+      }
+      updateTimeDisplay();
+    }
+
+    /** 进度条渲染 */
+    function updateProgressBar() {
+      if (!state.durationMs || state.durationMs <= 0) {
+        dom.progressFill.style.width = "0%";
+        return;
+      }
+      const pct = Math.min(100, Math.max(0, (state.positionMs / state.durationMs) * 100));
+      dom.progressFill.style.width = `${pct.toFixed(2)}%`;
+    }
+
+    /** 本地高频时间轮转驱动（60fps 匹配歌词与毫秒时间推进） */
+    function renderLoop() {
+      const now = Date.now();
+      const delta = now - state.lastTickAt;
+      state.lastTickAt = now;
+
+      if (state.isPlaying) {
+        state.positionMs += delta;
+        updateProgressBar();
+        updateTimeDisplay();
+      }
+
+      // 歌词匹配逻辑
+      if (state.lyrics.length > 0) {
+        const curMs = state.positionMs;
+        let activeIdx = -1;
+
+        for (let i = 0; i < state.lyrics.length; i++) {
+          const l = state.lyrics[i];
+          if (curMs >= l.startTime && curMs <= l.endTime) {
+            activeIdx = i;
+            break;
+          }
+          if (curMs >= l.startTime && (i === state.lyrics.length - 1 || curMs < state.lyrics[i + 1].startTime)) {
+            activeIdx = i;
+          }
+        }
+
+        if (activeIdx !== -1 && activeIdx !== state.currentLyricIndex) {
+          state.currentLyricIndex = activeIdx;
+          const activeLine = state.lyrics[activeIdx];
+
+          // 平滑切行过渡
+          dom.lyricBox.classList.add("lyric-changing");
+          setTimeout(() => {
+            // 第 1 行：主歌词
+            dom.lyricMain.innerText = activeLine.mainText || "♪";
+
+            // 第 2 行：中文翻译（有则展示，无则折叠收起）
+            if (activeLine.transText) {
+              dom.lyricTrans.innerText = activeLine.transText;
+              dom.lyricTrans.style.display = "block";
+            } else {
+              dom.lyricTrans.style.display = "none";
+            }
+
+            // 第 3 行：罗马音（有则展示，无则折叠收起）
+            if (activeLine.romanText) {
+              dom.lyricRoman.innerText = activeLine.romanText;
+              dom.lyricRoman.style.display = "block";
+            } else {
+              dom.lyricRoman.style.display = "none";
+            }
+
+            dom.lyricBox.classList.remove("lyric-changing");
+          }, 100);
+        }
+      }
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    /** 矢量高保真自动缩放适配（杜绝死锁与溢出） */
+    function applyAutoScaling() {
+      const widget = document.getElementById("widget");
+      if (!widget) return;
+
+      // 测量卡片无缩放时的自然尺寸
+      widget.style.zoom = "1";
+      const naturalHeight = widget.offsetHeight || 120;
+      const naturalWidth = widget.offsetWidth || 520;
+
+      // OBS 窗口可用区域（留安全边距）
+      const availH = Math.max(80, window.innerHeight - 32);
+      const availW = Math.max(200, window.innerWidth - 32);
+
+      // 高宽双向智能适配，确保在任何 OBS 分辨率下卡片 100% 完整显示且居中
+      const scaleByH = availH / naturalHeight;
+      const scaleByW = availW / naturalWidth;
+      const autoScale = Math.min(scaleByH, scaleByW);
+
+      widget.style.zoom = Math.max(0.6, autoScale);
+    }
+
+    // 启动
+    window.addEventListener("DOMContentLoaded", () => {
+      applyAutoScaling();
+      initConnection();
+      requestAnimationFrame(renderLoop);
+      setInterval(fetchStatus, CONFIG.pollIntervalMs);
+    });
+    window.addEventListener("resize", applyAutoScaling);
+  </script>
+</body>
+</html>
+
